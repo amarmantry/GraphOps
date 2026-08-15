@@ -1,0 +1,42 @@
+﻿<div th:fragment="content">
+    <h1 class="text-2xl font-semibold text-white mb-1">Blast Radius</h1>
+    <p class="text-slate-400 mb-8">If this service goes down, what else is affected downstream?</p>
+
+    <div th:if="${dbError}" class="bg-red-950 border border-red-800 text-red-200 rounded-lg px-4 py-3 mb-6">
+        Could not reach the database. Please check the connection and try again.
+    </div>
+
+    <form method="get" action="/blast-radius" class="flex gap-3 mb-8" th:unless="${dbError}">
+        <select name="service" class="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm flex-1 focus:outline-none focus:border-emerald-500">
+            <option value="">Select a service…</option>
+            <option th:each="s : ${services}"
+                    th:value="${s.name}"
+                    th:text="${s.name}"
+                    th:selected="${s.name == selectedService}">
+            </option>
+        </select>
+        <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 transition text-white text-sm font-medium px-5 py-2 rounded-lg">
+            Analyze
+        </button>
+    </form>
+
+    <div th:if="${selectedService != null and blastRadius != null}">
+        <h2 class="text-sm uppercase tracking-wide text-slate-500 mb-3">
+            <span th:text="${blastRadius.affected.size()}"></span> components affected downstream
+        </h2>
+        <div class="grid gap-3">
+            <div th:each="a : ${blastRadius.affected}" class="bg-slate-900 border border-slate-800 rounded-lg px-5 py-4 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="bg-slate-800 text-slate-400 text-xs font-medium px-2 py-1 rounded" th:text="${a.hopDistance} + ' hop' + (${a.hopDistance} > 1 ? 's' : '')"></span>
+                    <span class="text-white font-medium" th:text="${a.name}"></span>
+                    <span class="text-slate-500 text-xs" th:text="${a.labels[0]}"></span>
+                </div>
+                <span th:if="${a.anyCriticalHop}" class="bg-amber-900 text-amber-300 text-xs font-medium px-2 py-0.5 rounded">critical path</span>
+            </div>
+        </div>
+    </div>
+
+    <div th:if="${selectedService != null and blastRadius != null and blastRadius.affected.isEmpty()}" class="text-slate-500 text-sm">
+        No downstream dependencies found.
+    </div>
+</div>

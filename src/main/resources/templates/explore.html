@@ -1,0 +1,53 @@
+﻿<div th:fragment="content">
+    <h1 class="text-2xl font-semibold text-white mb-1">Explore</h1>
+    <p class="text-slate-400 mb-8">Trace a path between any two components, or see what infrastructure the most services depend on.</p>
+
+    <div th:if="${dbError}" class="bg-red-950 border border-red-800 text-red-200 rounded-lg px-4 py-3 mb-6">
+        Could not reach the database. Please check the connection and try again.
+    </div>
+
+    <div th:unless="${dbError}">
+        <h2 class="text-sm uppercase tracking-wide text-slate-500 mb-3">Path Trace</h2>
+        <form method="get" action="/explore" class="flex gap-3 mb-6">
+            <select name="source" class="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm flex-1 focus:outline-none focus:border-emerald-500">
+                <option value="">From…</option>
+                <option th:each="c : ${components}" th:value="${c.name}" th:text="${c.name}" th:selected="${c.name == selectedSource}"></option>
+            </select>
+            <select name="target" class="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm flex-1 focus:outline-none focus:border-emerald-500">
+                <option value="">To…</option>
+                <option th:each="c : ${components}" th:value="${c.name}" th:text="${c.name}" th:selected="${c.name == selectedTarget}"></option>
+            </select>
+            <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 transition text-white text-sm font-medium px-5 py-2 rounded-lg">
+                Trace
+            </button>
+        </form>
+
+        <div th:if="${pathResult != null and pathResult.pathExists}" class="bg-slate-900 border border-slate-800 rounded-lg px-5 py-4 mb-10">
+            <div class="flex items-center flex-wrap gap-2">
+                <template th:each="node, iter : ${pathResult.nodeNamesInOrder}">
+                    <span class="text-white font-medium" th:text="${node}"></span>
+                    <span th:if="${!iter.last}" class="text-emerald-400 text-sm" th:text="'→ ' + ${pathResult.relationshipTypesInOrder[iter.index]} + ' →'"></span>
+                </template>
+            </div>
+            <p class="text-slate-500 text-sm mt-2" th:text="${pathResult.hopCount} + ' hop' + (${pathResult.hopCount} > 1 ? 's' : '')"></p>
+        </div>
+
+        <div th:if="${pathResult != null and !pathResult.pathExists}" class="text-slate-500 text-sm mb-10">
+            No path exists between these two components.
+        </div>
+
+        <h2 class="text-sm uppercase tracking-wide text-slate-500 mb-3">Bottlenecks — shared dependencies</h2>
+        <div class="grid gap-3">
+            <div th:each="b : ${bottlenecks}" class="bg-slate-900 border border-slate-800 rounded-lg px-5 py-4 flex items-center justify-between">
+                <div>
+                    <span class="text-white font-medium" th:text="${b.dependencyName}"></span>
+                    <span class="text-slate-500 text-xs ml-2" th:text="${b.dependencyType}"></span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="text-slate-400 text-sm" th:text="${#strings.listJoin(b.dependentServices, ', ')}"></span>
+                    <span class="bg-slate-800 text-slate-300 text-xs font-medium px-2 py-1 rounded" th:text="'fan-in: ' + ${b.fanIn}"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
