@@ -1,92 +1,112 @@
-```markdown
-# GraphOps — Microservice Dependency & Blast Radius Intelligence
+# GraphOps — Dependency Intelligence for Distributed Systems
 
-GraphOps is a dependency intelligence and failure-simulation tool for distributed systems, built on **CognoDB** (a managed graph database speaking openCypher over Bolt). It maps services, databases, and third-party APIs into an infrastructure graph to analyze multi-hop failure blast radii, trace critical execution paths, and identify shared infrastructure bottlenecks.
+GraphOps is a dependency intelligence and cascading failure simulation platform for distributed microservice architectures. Backed by **CognoDB** (a managed graph database speaking openCypher over Bolt) and built with Spring Boot, it models service-to-service calls, database operations, and third-party integrations into a queryable dependency graph to analyze multi-hop blast radii, trace critical execution routes, and detect infrastructure bottlenecks.
 
-- **Live Hosted Demo:** [https://graphops-production-ea65.up.railway.app/](https://graphops-production-ea65.up.railway.app/)
-- **Demo Video Walkthrough:** [Watch on Loom](https://www.loom.com/share/0aa6d06cbf1649bcaf83dd838bb76099)
+* **Live Demo:** [https://graphops-production-ea65.up.railway.app/](https://graphops-production-ea65.up.railway.app/)
+
+* **Video Walkthrough (< 2 mins):** [Watch the GraphOps Loom Demo](https://www.loom.com/share/0aa6d06cbf1649bcaf83dd838bb76099)
+
 
 ---
 
 ## 1. Why a Graph Database?
 
-In modern microservice architectures, answering operational questions such as **"If Service X fails, what downstream components are affected?"** or **"What is the exact dependency route from Service A to Database B?"** is fundamentally a graph reachability problem.
+In distributed systems, critical questions like **"If Service X fails, what downstream systems and databases break?"** or **"What is the exact call chain between the API Gateway and PaymentsDB?"** are fundamentally graph traversal problems.
 
 ### The Relational SQL Problem
-In a relational database, storing connections in an adjacency table (`edges: source_id, target_id, rel_type`) requires recursive Common Table Expressions (CTEs) or multiple self-`JOIN`s to query paths of unknown depth.
-* Recursive CTEs execute iterative table scans and global index lookups at every hop.
-* Querying across heterogeneous entity types (`Service`, `Database`, `ExternalAPI`) with edge-specific properties requires verbose, fragile joins across multiple tables.
-* Relational queries return flattened rows rather than returning the traversed path as a structured entity.
 
-### The Graph Advantage in CognoDB
-* **Direct Pointer Traversal:** CognoDB follows relationships locally between adjacent nodes without performing global table joins.
-* **Concise Path Queries:** Variable-length paths (`*1..4`) and shortest-path algorithms are native language constructs in openCypher.
-* **Rich Edge Semantics:** Edges natively encapsulate properties such as `latencyMs`, `protocol`, and `critical` without requiring secondary junction tables.
+In a relational database, dependencies must be stored in an adjacency table (`edges: source_id, target_id, rel_type`). Answering variable-depth questions requires recursive Common Table Expressions (CTEs) or multiple self-`JOIN` operations:
+
+* **Computational Cost:** Recursive CTEs execute iterative table scans and global index lookups at every single hop level.
+* **Schema Rigidity:** Querying across heterogeneous entity types (`Service`, `Database`, `ExternalAPI`) with edge-level metadata (such as `latencyMs` or `protocol`) requires awkward joins across multiple tables.
+
+
+* **No Native Paths:** Relational tables return flattened sets of rows rather than the continuous execution path connecting components.
+
+
+
+### The Graph Advantage with CognoDB
+
+* **Direct Pointer Traversal (Index-Free Adjacency):** Relationships are stored as direct physical references between nodes, traversing connections without global table scans.
+
+
+* **Native Multi-Hop Queries:** openCypher queries express variable-depth reachability (`*1..4`) and shortest-path calculations in declarative statements.
+
+
+* **Rich Relationship Semantics:** Properties like `latencyMs`, `protocol`, and `critical` exist directly on relationships without junction tables.
+
+
 
 ---
 
-## 2. Graph Data Model
+## 2. Graph Data Model & Topology
 
-The graph consists of **16 nodes** and **20 typed relationships** representing a production e-commerce and checkout backend.
+The graph models a realistic production e-commerce checkout and authentication infrastructure comprising **16 nodes** and **20 typed relationships**.
 
+```mermaid
+graph LR
+    subgraph Services [P0 / P1 / P2 Services]
+        GW[APIGateway] -->|CALLS {critical: true, 65ms}| ORD[OrderService]
+        GW -->|CALLS {critical: true, 35ms}| AUTH[AuthService]
+        GW -->|CALLS {critical: false, 20ms}| ANALYTICS[AnalyticsService]
+        ORD -->|CALLS {protocol: gRPC, 80ms}| PAY[PaymentService]
+        ORD -->|CALLS {protocol: gRPC, 45ms}| INV[InventoryService]
+        ORD -->|CALLS {protocol: gRPC, 90ms}| FRAUD[FraudService]
+        ORD -->|CALLS {protocol: ASYNC, 15ms}| NOTIFY[NotificationService]
+    end
 
-```
+    subgraph Databases [Storage & Caches]
+        AUTH -->|READS_FROM / WRITES_TO| UDB[(UserDB - PostgreSQL)]
+        ORD -->|READS_FROM| UDB
+        PAY -->|READS_FROM / WRITES_TO| PDB[(PaymentsDB - PostgreSQL)]
+        INV -->|READS_FROM / WRITES_TO| IDB[(ProductsDB - PostgreSQL)]
+        FRAUD -->|READS_FROM / WRITES_TO| FCACHE[(FraudCache - Redis)]
+        ANALYTICS -->|WRITES_TO| DL[(DataLake - ClickHouse)]
+    end
 
-```
-                 ┌──────────────────┐
-                 │   APIGateway     │
-                 └──┬──────┬──────┬─┘
-       CALLS (35ms) │      │      │ CALLS (20ms, non-critical)
-    ┌───────────────┘      │      └─────────────────┐
-    ▼                      ▼ CALLS (65ms)           ▼
-
-```
-
-┌──────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│ AuthService  │     │   OrderService   │     │ AnalyticsService │
-└──────┬───────┘     └──┬──────┬──────┬─┘     └────────┬─────────┘
-│                │      │      │                │ WRITES_TO
-│                │      │      │ CALLS (15ms)   ▼
-│   CALLS (80ms) │      │      └────────► ┌──────────────────┐
-│ ┌──────────────┘      │                 │NotificationService│
-│ │                     │ CALLS (45ms)    └────────┬─────────┘
-▼ ▼                     ▼                          │ CALLS
-┌──────────────┐     ┌──────────────────┐                 ▼
-│PaymentService│     │ InventoryService │        ┌──────────────────┐
-└──────┬───────┘     └────────┬─────────┘        │   SendGridAPI    │
-│                      │                  │  (ExternalAPI)   │
-│ WRITES_TO            │ WRITES_TO        └──────────────────┘
-▼                      ▼
-┌──────────────┐     ┌──────────────────┐
-│  PaymentsDB  │     │   ProductsDB     │
-│  (Database)  │     │   (Database)     │
-└──────────────┘     └──────────────────┘
+    subgraph ExternalAPIs [Third-Party Services]
+        PAY -->|CALLS {critical: true}| STRIPE[StripeAPI]
+        NOTIFY -->|CALLS {critical: false}| SENDGRID[SendGridAPI]
+        AUTH -->|CALLS {critical: false}| PERSONA[PersonaVerify]
+    end
 
 ```
 
-### Node Labels & Properties
-* **`:Service` (8 nodes):** `name`, `team`, `tier` (`P0`, `P1`, `P2`), `environment`
-  * `APIGateway`, `AuthService`, `OrderService`, `PaymentService`, `InventoryService`, `FraudService`, `NotificationService`, `AnalyticsService`
-* **`:Database` (5 nodes):** `name`, `engine` (`PostgreSQL`, `Redis`, `ClickHouse`), `environment`
-  * `UserDB`, `PaymentsDB`, `ProductsDB`, `FraudCache`, `DataLake`
-* **`:ExternalAPI` (3 nodes):** `name`, `provider`
-  * `StripeAPI` (Stripe), `SendGridAPI` (Twilio), `PersonaVerify` (Persona)
+### Schema Summary
 
-### Relationship Types & Properties
-* **`-[:CALLS]->`**: `Service` $\rightarrow$ `Service` or `Service` $\rightarrow$ `ExternalAPI`
-  * Properties: `protocol` (`REST`, `gRPC`, `HTTPS`, `ASYNC`), `latencyMs` (integer), `critical` (boolean)
-* **`-[:READS_FROM]->`**: `Service` $\rightarrow$ `Database`
-* **`-[:WRITES_TO]->`**: `Service` $\rightarrow$ `Database`
-  * Properties: `operation` (`SYNC`, `ASYNC`), `critical` (boolean)
+* **16 Nodes across 3 Labels:**
+
+* **`:Service` (8 nodes):** `APIGateway`, `AuthService`, `OrderService`, `PaymentService`, `InventoryService`, `FraudService`, `NotificationService`, `AnalyticsService`
+
+* **`:Database` (5 nodes):** `UserDB`, `PaymentsDB`, `ProductsDB`, `FraudCache`, `DataLake`
+
+* **`:ExternalAPI` (3 nodes):** `StripeAPI`, `SendGridAPI`, `PersonaVerify`
+
+
+
+* **20 Relationships across 3 Types:**
+
+* `CALLS`: `Service` $\rightarrow$ `Service` or `Service` $\rightarrow$ `ExternalAPI` (contains `protocol`, `latencyMs`, `critical`)
+
+
+* `READS_FROM`: `Service` $\rightarrow$ `Database`
+
+* `WRITES_TO`: `Service` $\rightarrow$ `Database` (contains `operation`, `critical`)
+
+
+
+
 
 ---
 
 ## 3. Core Features & Cypher Queries
 
-All Cypher queries in GraphOps are fully parameterized via `Map.of()` parameters using the official Neo4j Java driver.
+All Cypher queries in GraphOps are fully parameterized using `Map.of()` parameters through the official Neo4j Java driver to prevent Cypher injection.
 
 ### 1. Service Dependencies (1-Hop Inspection)
-Retrieves all direct outbound calls, database operations, and API integrations for a chosen service.
+
+Retrieves all direct outbound service-to-service calls, database reads/writes, and external API requests with protocol and latency metadata.
+
 ```cypher
 MATCH (s:Service {name: $serviceName})-[r:CALLS|READS_FROM|WRITES_TO]->(target)
 RETURN s.name AS source, target.name AS target, type(r) AS relType,
@@ -96,9 +116,9 @@ ORDER BY target.name;
 
 ```
 
-### 2. Blast Radius Simulation (Multi-Hop Traversal)
+### 2. Failure Blast Radius (Multi-Hop Traversal)
 
-Performs a variable-length traversal (clamped between 1 and 6 hops) to identify all reachable downstream services, databases, and APIs when an outage occurs. It calculates minimum hop distance and detects whether any leg of the dependency chain traverses a critical link.
+Evaluates cascading downstream failure risks by discovering all reachable nodes across 1 to 4 hops and detecting if any leg of the chain traverses a critical path.
 
 ```cypher
 MATCH path = (s:Service {name: $serviceName})-[:CALLS|READS_FROM|WRITES_TO*1..4]->(affected)
@@ -112,10 +132,10 @@ ORDER BY hopDistance, name;
 
 ### 3. Path Trace (Shortest Path Discovery)
 
-Finds the shortest dependency chain between any two infrastructure components (e.g., `APIGateway` to `PaymentsDB`) across up to 8 hops.
+Finds the shortest dependency chain between any two infrastructure components across up to 8 hops.
 
 ```cypher
-MATCH (a {name: $sourceName}), (b {name:$targetName})
+MATCH (a {name: $sourceName}), (b {name: $targetName})
 MATCH path = shortestPath((a)-[:CALLS|READS_FROM|WRITES_TO*..8]-(b))
 RETURN path;
 
@@ -123,7 +143,7 @@ RETURN path;
 
 ### 4. Bottleneck Detection (Fan-In Analysis)
 
-Aggregates databases and external APIs that are shared across multiple upstream services to identify single points of failure.
+Aggregates shared databases and external APIs to surface single points of failure across the architecture.
 
 ```cypher
 MATCH (s:Service)-[:CALLS|READS_FROM|WRITES_TO]->(dep)
@@ -137,25 +157,32 @@ ORDER BY fanIn DESC, depName;
 
 ---
 
-## 4. Engineering Architecture & Code Structure
+## 4. Tech Stack & Architecture
 
-The project uses a clean layered architecture with Spring Boot and the official `org.neo4j.driver:neo4j-java-driver`.
+* **Backend:** Java 21, Spring Boot 3.3.x, official `neo4j-java-driver` over Bolt (`bolt+s://`)
+
+
+* **Database:** CognoDB Cloud (Managed openCypher Graph Database)
+
+
+* **Frontend:** Thymeleaf + Tailwind CSS (server-side rendered, zero Node.js build overhead)
+* **Hosting:** Railway (Auto-deploy on GitHub push)
 
 ```
-GraphOps-main/
-├── pom.xml                                  # Maven project configuration (Java 21 / Spring Boot)
+graphops/
+├── pom.xml                                  # Maven dependencies (Spring Boot, neo4j-java-driver)
 ├── scripts/
-│   └── seed.cypher                          # Full seed script for nodes, edges & metadata
+│   └── seed.cypher                          # Idempotent Cypher seed script (16 nodes, 20 edges)
 ├── src/main/
 │   ├── java/com/amarmantry/graphops/
-│   │   ├── GraphopsApplication.java         # Application main class
+│   │   ├── GraphopsApplication.java         # Application entry point
 │   │   ├── config/
-│   │   │   ├── Neo4jDriverConfig.java       # Singleton Driver bean reading env vars
-│   │   │   └── Neo4jHealthCheck.java        # Startup node count verification
+│   │   │   ├── Neo4jDriverConfig.java       # Singleton Bolt Driver bean with env credentials
+│   │   │   └── Neo4jHealthCheck.java        # Startup connection verification
 │   │   ├── controller/
-│   │   │   ├── GraphOpsViewController.java   # UI controller (Dependencies, Blast Radius, Explore, Architecture)
+│   │   │   ├── GraphOpsViewController.java   # UI controller handling view models & dbError states
 │   │   │   └── GraphOpsDebugController.java  # REST endpoints for API verification
-│   │   ├── dto/                             # Strongly typed records (ServiceDto, DependencyDto, etc.)
+│   │   ├── dto/                             # Strongly-typed record DTOs
 │   │   └── repository/
 │   │       ├── GraphOpsRepository.java       # Repository interface
 │   │       ├── Neo4jGraphOpsRepository.java  # Parameterized Cypher driver implementation
@@ -163,22 +190,14 @@ GraphOps-main/
 │   └── resources/
 │       ├── application.properties           # Driver connection variable placeholders
 │       └── templates/
-│           ├── layout.html                  # Tailwind CSS master navigation & layout
-│           ├── dashboard.html               # 1-hop dependency view
+│           ├── layout.html                  # Tailwind master layout & navigation
+│           ├── dashboard.html               # 1-hop dependencies view
 │           ├── blast-radius.html            # Multi-hop blast radius simulation view
 │           ├── explore.html                 # Shortest path & bottleneck view
-│           └── architecture.html            # In-app graph schema & data model breakdown
+│           └── architecture.html            # In-app graph schema & data flow view
 └── .env.example                             # Environment variable template
 
 ```
-
-### Key Engineering Practices
-
-1. **Parameterized Cypher Execution:** All dynamic queries pass user arguments through parameter maps (`Map.of(...)`), preventing Cypher injection vulnerabilities.
-2. **Safe Traversal Bounds:** For queries where Cypher syntax restricts parameterizing range bounds (`*1..N`), the hop limit is bounded and sanitized in Java (`Math.max(1, Math.min(maxHops, 6))`) before query construction.
-3. **Singleton Driver & Connection Management:** A single `org.neo4j.driver.Driver` instance manages connection pooling across threads. Every query runs within an auto-closing `try (Session session = driver.session())` block.
-4. **Graceful Error Handling:** Database queries are wrapped in `GraphQueryException` handlers. When CognoDB is unreachable, `GraphOpsViewController` catches the error and serves a clean UI warning banner without crashing the application.
-5. **No Frontend Build Overhead:** The UI uses Thymeleaf server-side templates with Tailwind CSS via CDN, ensuring rapid startup and zero Node.js build dependencies.
 
 ---
 
@@ -190,18 +209,20 @@ GraphOps-main/
 * Maven 3.8+
 * A free CognoDB Cloud account (`console.cognodb.com`)
 
+
+
 ### 1. Clone & Configure
 
 ```bash
-git clone [https://github.com/amarmantry/GraphOps.git](https://github.com/amarmantry/GraphOps.git)
+git clone https://github.com/amarmantry/GraphOps.git
 cd GraphOps
 
-# Create your local environment file
+# Create local environment configuration
 cp .env.example .env
 
 ```
 
-Set your CognoDB connection details in `.env` or your shell environment:
+Configure your CognoDB instance credentials in `.env`:
 
 ```env
 NEO4J_URI=bolt+s://YOUR_INSTANCE_ID.databases.cognodb.cloud
@@ -213,54 +234,68 @@ NEO4J_PASSWORD=YOUR_COGNODB_PASSWORD
 ### 2. Seed CognoDB
 
 1. Log in to [console.cognodb.com](https://www.google.com/search?q=https://console.cognodb.com) and open your instance's **Cypher Console**.
-2. Copy the entire contents of `scripts/seed.cypher` and run it. The script is idempotent and safe to re-run.
 
-### 3. Run the Application
+
+2. Copy and run the entire contents of `scripts/seed.cypher`. The script is idempotent and safe to re-run.
+
+
+
+### 3. Run Application
 
 ```bash
 ./mvnw clean spring-boot:run
 
 ```
 
-Open your browser to `http://localhost:8080`.
+Access the application at `http://localhost:8080`.
 
 ---
 
-## 6. Live Deployment
+## 6. Deployment & Engineering Resilience
 
-The application is deployed on **Railway**:
+* **Live Hosted URL:** [https://graphops-production-ea65.up.railway.app/](https://graphops-production-ea65.up.railway.app/)
 
-* **Hosted URL:** [https://graphops-production-ea65.up.railway.app/](https://graphops-production-ea65.up.railway.app/)
-* **Environment Variables:** `NEO4J_URI`, `NEO4J_USERNAME`, and `NEO4J_PASSWORD` are injected via the Railway dashboard.
-* **Port Configuration:** Bound to `PORT=8080`.
+* **Zero Hardcoded Secrets:** Credentials are read exclusively from environment variables (`NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`).
+
+
+* **Graceful Degradation:** If CognoDB Cloud is unreachable or experiencing network latency, queries are trapped in `GraphQueryException` and the UI renders a clean error notification banner without crashing the server.
+
+
+* **Sanitized Query Bounds:** Traversal range limits are clamped in application logic (`Math.max(1, Math.min(maxHops, 6))`) prior to executing Cypher queries.
+
+
 
 ---
 
 ## 7. Submission Checklist Verification
 
-* [x] **Graph Data Model:** Labeled nodes (`Service`, `Database`, `ExternalAPI`), typed edges (`CALLS`, `READS_FROM`, `WRITES_TO`), and properties (`latencyMs`, `critical`, `tier`, `engine`).
+* [x] **Graph Data Model:** Labeled nodes (`Service`, `Database`, `ExternalAPI`), typed relationships (`CALLS`, `READS_FROM`, `WRITES_TO`), and rich properties (`latencyMs`, `critical`, `tier`, `engine`).
 
 
-* [x] **Seed Script:** Repeatable `scripts/seed.cypher` loading 16 nodes and 20 relationships.
+* [x] **Seed Script:** Repeatable `scripts/seed.cypher` creating 16 nodes and 20 relationships.
 
 
-* [x] **Cypher Traversals:** Variable multi-hop traversal (`*1..N`), shortest-path finding (`shortestPath`), and fan-in aggregation.
+* [x] **Cypher Traversals:** Multi-hop traversal (`*1..4`), shortest-path finding (`shortestPath`), and fan-in aggregation.
+
+
 * [x] **Parameterized Queries:** 100% of user inputs passed via `Map.of()` parameters using the official Neo4j Java driver.
-* [x] **Non-Technical UI/UX:** Clean, responsive Tailwind dashboard with dropdown selectors, loading states, empty prompt cards, and database error banners.
+
+
+* [x] **Polished UI/UX:** Server-rendered dashboard with dropdown selectors, loading states, empty prompt cards, and database error banners.
 
 
 * [x] **Engineering & Secrets:** Secrets loaded strictly from environment variables; singleton driver connection pooling; controller-level graceful degradation.
 
 
 * [x] **Live Hosted Demo:** Deployed and publicly accessible on Railway.
-* [x] **Walkthrough Video:** Screen recording demonstrating live query execution and UI interactions ([Loom Video](https://www.loom.com/share/0aa6d06cbf1649bcaf83dd838bb76099)).
+
+
+* [x] **Walkthrough Video:** Screen recording demonstrating live application and query execution.
+
+
 
 ---
 
 ## License
 
 MIT
-
-```
-
-```
