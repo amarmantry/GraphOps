@@ -4,7 +4,7 @@ GraphOps is a dependency intelligence and failure-simulation tool for distribute
 
 **Live Hosted Demo:** [https://graphops-production-ea65.up.railway.app/](https://graphops-production-ea65.up.railway.app/)
 
-**Walkthrough Video (< 3 mins):** [Watch the GraphOps Demo on Loom](https://www.loom.com/share/YOUR_VIDEO_ID)
+**Walkthrough Video (< 3 mins):** [Watch the GraphOps Demo on Loom](https://www.loom.com/share/0aa6d06cbf1649bcaf83dd838bb76099)
 
 ---
 
