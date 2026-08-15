@@ -1,6 +1,7 @@
 package com.amarmantry.graphops.repository;
 
 import com.amarmantry.graphops.dto.*;
+import com.amarmantry.graphops.exception.GraphQueryException;
 import org.neo4j.driver.Driver;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.Session;
@@ -13,7 +14,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Repository
 public class Neo4jGraphOpsRepository implements GraphOpsRepository {
