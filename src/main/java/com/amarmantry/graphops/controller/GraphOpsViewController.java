@@ -99,4 +99,11 @@ public class GraphOpsViewController {
     private boolean isValidComponentName(String name) {
         return name != null && !name.isBlank() && name.length() <= MAX_COMPONENT_NAME_LENGTH;
     }
+
+    @GetMapping("/architecture")
+    public String architecture(Model model) {
+        model.addAttribute("pageTitle", "System Architecture");
+        model.addAttribute("content", "architecture :: content");
+        return "layout";
+    }
 }

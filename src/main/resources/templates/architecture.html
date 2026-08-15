@@ -1,0 +1,52 @@
+<div th:fragment="content">
+    <h1 class="text-2xl font-semibold text-white mb-1">Graph Data Model & Topology</h1>
+    <p class="text-slate-400 mb-8">Direct representation of the 16 nodes and 20 typed relationships modeled inside CognoDB.</p>
+
+    <!-- Visual ASCII Topology Card -->
+    <div class="bg-slate-900 border border-slate-800 rounded-lg p-5 mb-8">
+        <span class="text-xs uppercase tracking-wide text-emerald-400 font-semibold">Service Mesh & Data Flow Map</span>
+        <pre class="text-xs font-mono text-slate-300 overflow-x-auto mt-4 leading-relaxed">
+                     ┌──────────────────┐
+                     │   APIGateway     │
+                     └──┬──────┬──────┬─┘
+           CALLS (35ms) │      │      │ CALLS (20ms)
+        ┌───────────────┘      │      └─────────────────┐
+        ▼                      ▼ CALLS (65ms)           ▼
+ ┌──────────────┐     ┌──────────────────┐     ┌──────────────────┐
+ │ AuthService  │     │   OrderService   │     │ AnalyticsService │
+ └──────┬───────┘     └──┬──────┬──────┬─┘     └────────┬─────────┘
+        │                │      │      │                │ WRITES_TO
+        │                │      │      │ CALLS (15ms)   ▼
+        │   CALLS (80ms) │      │      └────────► ┌──────────────────┐
+        │ ┌──────────────┘      │                 │NotificationService│
+        │ │                     │ CALLS (45ms)    └────────┬─────────┘
+        ▼ ▼                     ▼                          │ CALLS
+ ┌──────────────┐     ┌──────────────────┐                 ▼
+ │PaymentService│     │ InventoryService │        ┌──────────────────┐
+ └──────┬───────┘     └────────┬─────────┘        │   SendGridAPI    │
+        │                      │                  │  (ExternalAPI)   │
+        │ WRITES_TO            │ WRITES_TO        └──────────────────┘
+        ▼                      ▼
+ ┌──────────────┐     ┌──────────────────┐
+ │  PaymentsDB  │     │   ProductsDB     │
+ │  (Database)  │     │   (Database)     │
+ └──────────────┘     └──────────────────┘
+        </pre>
+    </div>
+
+    <!-- Node Breakdown -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+            <span class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Services (8 Nodes)</span>
+            <p class="text-slate-300 text-xs mt-2 font-mono">APIGateway, AuthService, OrderService, PaymentService, InventoryService, FraudService, NotificationService, AnalyticsService</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+            <span class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Databases (5 Nodes)</span>
+            <p class="text-slate-300 text-xs mt-2 font-mono">UserDB, PaymentsDB, ProductsDB (PostgreSQL), FraudCache (Redis), DataLake (ClickHouse)</p>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-lg p-5">
+            <span class="text-xs uppercase tracking-wide text-slate-500 font-semibold">External APIs (3 Nodes)</span>
+            <p class="text-slate-300 text-xs mt-2 font-mono">StripeAPI (Stripe), SendGridAPI (Twilio), PersonaVerify (Persona)</p>
+        </div>
+    </div>
+</div>
